@@ -39,7 +39,7 @@ build/linux/done/pack: build/linux/done/install
 	@touch $@
 
 build/artifacts{push}: .github-init
-	(cd build/artifacts/up; for file in *; do name=$$(basename "$$file"); (cd $(PWD); bash g/github/ul-artifact "$$name" "build/artifacts/up/$$name") && rm -f "build/artifacts/up/$$name"; done)
+	(cd build/artifacts/up; for file in *; do name=$$(basename "$$file"); (cd $(PWD); bash github/ul-artifact "$$name" "build/artifacts/up/$$name") && rm -f "build/artifacts/up/$$name"; done)
 
 %{artifact}: % .github-init
 	$(MKDIR) build/artifacts/up

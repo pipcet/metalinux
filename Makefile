@@ -7,43 +7,74 @@ SUDO ?= sudo
 CONFIG ?= config/apple-m1-j293.config
 PWD ?= $(shell pwd)
 
-all: build/linux/done/pack
+all: $(BUILD)/linux/done/pack
 
 %/:
 	$(MKDIR) $@
 
-build/linux/done/copy: | build/linux/done/
-	$(CP) -as $(PWD)/linux/ build/linux/build
+$(BUILD)/debian/debootstrap/done/checkout:
+	$(MKDIR) $(BUILD)/debian/debootstrap/done
+	$(MKDIR) debian/debootstrap
+	(cd debian/debootstrap; git checkout https://github.com/pipcet/debootstrap)
 	touch $@
 
-build/linux/done/configure: $(CONFIG) build/linux/done/copy
-	$(CP) $< build/linux/build/.config
-	$(MAKE) -C build/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig
+$(BUILD)/debian/debootstrap/stage1.tar: $(BUILD)/debian/debootstrap/done/checkout | $(BUILD)/debian/debootstrap
+	$(SUDO) DEBOOTSTRAP_DIR=$(PWD)/debian/debootstrap/debootstrap ./debian/debootstrap/debootstrap/debootstrap --foreign --arch=arm64 --include=dash,wget,busybox,busybox-static,network-manager,openssh-client,net-tools,libpam-systemd,cryptsetup,lvm2,memtool,nvme-cli,watchdog,minicom,device-tree-compiler,file,gpm sid $(BUILD)/debian/debootstrap/stage1 http://deb.debian.org/debian
+	(cd $(BUILD)/debian/debootstrap/stage1; $(SUDO) tar c .) > $@
+
+$(BUILD)/debian/debootstrap/stage15.tar: $(BUILD)/debian/debootstrap/stage1.tar $(BUILD)/linux/done/pack
+	$(MKDIR) $(BUILD)/debian/debootstrap/stage15
+	(cd $(BUILD)/debian/debootstrap/stage15; $(SUDO) tar x) < $<
+	(cd $(BUILD)/debian/debootstrap/stage15/var/cache/apt/archives/; for a in *.deb; do $(SUDO) dpkg-deb -R $$a $$a.d; $(SUDO) dpkg-deb -b -Znone $$a.d; $(SUDO) mv $$a.d.deb $$a; $(SUDO) rm -rf $$a.d; done)
+	for a in $(BUILD)/debian/debootstrap/stage15/var/cache/apt/archives/*.deb; do $(SUDO) dpkg -x $$a $(BUILD)/debian/debootstrap/stage15; done
+	(echo "root:x:0:0:root:/root:/bin/bash" | $(SUDO) tee $(BUILD)/debian/debootstrap/stage15/etc/passwd)
+	(echo "root::0:::::" | $(SUDO) tee $(BUILD)/debian/debootstrap/stage15/etc/shadow)
+	(cd $(BUILD)/debian/debootstrap/stage15; tar xz) < $(BUILD)/linux.modules.gz
+	(echo "#!/bin/sh"; echo "/debootstrap/debootstrap --second-stage"; echo "(echo x; echo x) | passwd"; echo "exec /sbin/init") > $(BUILD)/debian/debootstrap/stage15/init
+	chmod a+x $(BUILD)/debian/debootstrap/stage15/init
+	(cd $(BUILD)/debian/debootstrap/stage15; $(SUDO) tar c .) > $@
+
+$(BUILD)/debian.cpio: $(BUILD)/debian/debootstrap/stage15.tar
+	$(MKDIR) $(BUILD)/debian/cpio.d
+	(cd $(BUILD)/debian/cpio.d; $(SUDO) tar x) < $<
+	$(SUDO) ln -sf bin/bash $(BUILD)/debian/cpio.d/init
+	(cd $(BUILD)/debian/cpio.d; $(SUDO) find | $(SUDO) cpio -o -H newc) > $@
+
+$(BUILD)/debian.cpio.gz: $(BUILD)/debian.cpio
+	gzip < $< > $@
+
+$(BUILD)/linux/done/copy: | $(BUILD)/linux/done/
+	$(CP) -as $(PWD)/linux/ $(BUILD)/linux/build
 	touch $@
 
-build/linux/done/build: build/linux/done/configure
-	$(MAKE) -C build/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE)
+$(BUILD)/linux/done/configure: $(CONFIG) $(BUILD)/linux/done/copy
+	$(CP) $< $(BUILD)/linux/build/.config
+	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig
 	touch $@
 
-build/linux/done/install: build/linux/done/build
-	$(MAKE) -C build/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) INSTALL_MOD_PATH=$(PWD)/build/linux.modules.d modules_install
+$(BUILD)/linux/done/build: $(BUILD)/linux/done/configure
+	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE)
 	touch $@
 
-build/linux/done/pack: build/linux/done/install
-	(cd build/linux.modules.d; tar czv .) > build/linux.modules.gz
-	gzip < build/linux/build/arch/arm64/boot/Image > build/linux.image.gz
+$(BUILD)/linux/done/install: $(BUILD)/linux/done/build
+	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) INSTALL_MOD_PATH=$(PWD)/$(BUILD)/linux.modules.d modules_install
+	touch $@
+
+$(BUILD)/linux/done/pack: $(BUILD)/linux/done/install
+	(cd $(BUILD)/linux.modules.d; tar czv .) > $(BUILD)/linux.modules.gz
+	gzip < $(BUILD)/linux/build/arch/arm64/boot/Image > $(BUILD)/linux.image.gz
 	touch $@
 
 .github-init:
 	bash github/artifact-init
 	@touch $@
 
-build/artifacts{push}: .github-init
-	(cd build/artifacts/up; for file in *; do name=$$(basename "$$file"); (cd $(PWD); bash github/ul-artifact "$$name" "build/artifacts/up/$$name") && rm -f "build/artifacts/up/$$name"; done)
+$(BUILD)/artifacts{push}: .github-init
+	(cd $(BUILD)/artifacts/up; for file in *; do name=$$(basename "$$file"); (cd $(PWD); bash github/ul-artifact "$$name" "$(BUILD)/artifacts/up/$$name") && rm -f "$(BUILD)/artifacts/up/$$name"; done)
 
 %{artifact}: % .github-init
-	$(MKDIR) build/artifacts/up
-	cp $< build/artifacts/up
-	$(MAKE) build/artifacts{push}
+	$(MKDIR) $(BUILD)/artifacts/up
+	cp $< $(BUILD)/artifacts/up
+	$(MAKE) $(BUILD)/artifacts{push}
 
 .SECONDARY: %

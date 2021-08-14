@@ -22,5 +22,6 @@ jobs:
     - run: sudo apt-get install bc
     - run: make -j4 build/linux/done/pack
     - run: make -j4 build/linux.image.gz{artifact}
-    - run: make -j4 build/linux.modules
     - run: make -j4 build/linux.modules.gz{artifact}
+    - run: make -j4 build/debian.cpio.gz
+    - run: make -j4 build/debian.cpio.gz{artifact}

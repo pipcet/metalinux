@@ -6,6 +6,7 @@ TAR ?= tar
 SUDO ?= sudo
 CONFIG ?= config/apple-m1-j293.config
 PWD ?= $(shell pwd)
+BUILD ?= build
 
 all: $(BUILD)/linux/done/pack
 

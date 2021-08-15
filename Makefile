@@ -16,7 +16,7 @@ all: $(BUILD)/linux/done/pack
 $(BUILD)/debian/debootstrap/done/checkout:
 	$(MKDIR) $(BUILD)/debian/debootstrap/done
 	$(MKDIR) debian/debootstrap
-	(cd debian/debootstrap; git checkout https://github.com/pipcet/debootstrap)
+	(cd debian/debootstrap; git clone https://github.com/pipcet/debootstrap)
 	touch $@
 
 $(BUILD)/debian/debootstrap/stage1.tar: $(BUILD)/debian/debootstrap/done/checkout | $(BUILD)/debian/debootstrap/

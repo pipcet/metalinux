@@ -4,6 +4,7 @@ CP ?= cp
 CAT ?= cat
 TAR ?= tar
 SUDO ?= sudo
+ARCH ?= arm64
 CONFIG ?= config/apple-m1-j293.config
 PWD ?= $(shell pwd)
 BUILD ?= build
@@ -30,7 +31,7 @@ $(BUILD)/debian/debootstrap/stage15.tar: $(BUILD)/debian/debootstrap/stage1.tar 
 	for a in $(BUILD)/debian/debootstrap/stage15/var/cache/apt/archives/*.deb; do $(SUDO) dpkg -x $$a $(BUILD)/debian/debootstrap/stage15; done
 	(echo "root:x:0:0:root:/root:/bin/bash" | $(SUDO) tee $(BUILD)/debian/debootstrap/stage15/etc/passwd)
 	(echo "root::0:::::" | $(SUDO) tee $(BUILD)/debian/debootstrap/stage15/etc/shadow)
-	(cd $(BUILD)/debian/debootstrap/stage15; tar xz) < $(BUILD)/linux.modules.gz
+	(cd $(BUILD)/debian/debootstrap/stage15; $(SUDO) tar xz) < $(BUILD)/linux.modules.gz
 	(echo "#!/bin/sh"; echo "/debootstrap/debootstrap --second-stage"; echo "(echo x; echo x) | passwd"; echo "exec /sbin/init") > $(BUILD)/debian/debootstrap/stage15/init
 	chmod a+x $(BUILD)/debian/debootstrap/stage15/init
 	(cd $(BUILD)/debian/debootstrap/stage15; $(SUDO) tar c .) > $@
@@ -48,17 +49,23 @@ $(BUILD)/linux/done/copy: | $(BUILD)/linux/done/
 	$(CP) -as $(PWD)/linux/ $(BUILD)/linux/build
 	touch $@
 
+menuconfig: $(CONFIG)
+	$(CP) $< $(BUILD)/linux/build/.config
+	$(MAKE) -C $(BUILD)/linux/build ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) menuconfig
+	$(CP) $< $<.old
+	$(CP) $(BUILD)/linux/build/.config $<
+
 $(BUILD)/linux/done/configure: $(CONFIG) $(BUILD)/linux/done/copy
 	$(CP) $< $(BUILD)/linux/build/.config
-	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig
+	$(MAKE) -C $(BUILD)/linux/build ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig
 	touch $@
 
 $(BUILD)/linux/done/build: $(BUILD)/linux/done/configure
-	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE)
+	$(MAKE) -C $(BUILD)/linux/build ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE)
 	touch $@
 
 $(BUILD)/linux/done/install: $(BUILD)/linux/done/build
-	$(MAKE) -C $(BUILD)/linux/build ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE) INSTALL_MOD_PATH=$(PWD)/$(BUILD)/linux.modules.d modules_install
+	$(MAKE) -C $(BUILD)/linux/build ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) INSTALL_MOD_PATH=$(PWD)/$(BUILD)/linux.modules.d modules_install
 	touch $@
 
 $(BUILD)/linux/done/pack: $(BUILD)/linux/done/install
@@ -78,4 +85,5 @@ $(BUILD)/artifacts{push}: .github-init
 	cp $< $(BUILD)/artifacts/up
 	$(MAKE) $(BUILD)/artifacts{push}
 
+.PHONY: menuconfig
 .SECONDARY: %
